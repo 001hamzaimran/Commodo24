@@ -109,6 +109,32 @@ export default {
         throw error;
       }
     },
-  }
+  },
 
+  ORDERS_PAID: {
+    deliveryMethod: DeliveryMethod.Http,
+    callbackUrl: "/api/webhooks",
+    callback: async (topic, shop, body, webhookId) => {
+      console.log("🔔 Webhook received:", topic, shop);
+
+      try {
+        const data = typeof body === 'string' ? JSON.parse(body) : body;
+        console.log("Order data:", JSON.stringify(data, null, 2));
+
+        // Get session correctly
+        const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop);
+        if (!sessions || sessions.length === 0) {
+          throw new Error(`No session found for shop: ${shop}`);
+        }
+
+        const session = sessions[0];
+        console.log("Session found:", session.id);
+
+      } catch (error) {
+        console.error("Webhook processing error:", error);
+        // Rethrow to ensure proper error handling
+        throw error;
+      }
+    },
+  }
 };
