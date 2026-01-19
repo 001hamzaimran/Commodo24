@@ -1,0 +1,35 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "ae63ca25bc47bc59aa79dc10fe94b9c1"
+name = "Comodo24"
+application_url = "https://comodo24-547f3caf62ae.herokuapp.com/"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-04"
+
+[[webhooks.subscriptions]]
+uri = "/webhooks/customers/data_request"
+compliance_topics = ["customers/data_request"]
+
+[[webhooks.subscriptions]]
+uri = "/webhooks/customers/redact"
+compliance_topics = ["customers/redact"]
+
+[[webhooks.subscriptions]]
+uri = "/webhooks/shop/redact"
+compliance_topics = ["shop/redact"]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_assigned_fulfillment_orders,read_cart_transforms,read_checkout_branding_settings,read_content,read_customer_events,read_customer_merge,read_customers,read_delivery_customizations,read_discounts,read_draft_orders,read_files,read_fulfillments,read_gift_cards,read_inventory,read_legal_policies,read_locales,read_locations,read_marketing_events,read_merchant_managed_fulfillment_orders,read_online_store_pages,read_orders,read_price_rules,read_products,read_publications,read_reports,read_resource_feedbacks,read_script_tags,read_shipping,read_shopify_payments_disputes,read_shopify_payments_payouts,read_themes,read_third_party_fulfillment_orders,write_assigned_fulfillment_orders,write_cart_transforms,write_checkout_branding_settings,write_content,write_customer_merge,write_customers,write_delivery_customizations,write_discounts,write_draft_orders,write_files,write_fulfillments,write_gift_cards,write_inventory,write_locales,write_locations,write_marketing_events,write_merchant_managed_fulfillment_orders,write_orders,write_pixels,write_price_rules,write_products,write_publications,write_reports,write_resource_feedbacks,write_script_tags,write_shipping,write_themes,write_third_party_fulfillment_orders,write_order_edits"
+ 
+[auth]
+redirect_urls = [
+    "https://comodo24-547f3caf62ae.herokuapp.com/auth/callback",
+    "https://comodo24-547f3caf62ae.herokuapp.com/auth/shopify/callback",
+    "https://comodo24-547f3caf62ae.herokuapp.com/api/auth/callback",
+]
