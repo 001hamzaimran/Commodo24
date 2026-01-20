@@ -83,3 +83,20 @@ export const createShopifyOrder = async (payload, shop) => {
         return { success: false, error: error.message };
     }
 };
+
+export const getShopifyOrder = async (req, res) => {
+    try {
+        const { shopify_store_id } = req.query;
+
+        const orders = await ShopifyOrder.find({ shopify_store_id });
+
+        if (!orders) {
+            return res.status(404).json({ error: "Orders not found", success: false });
+        }
+
+        return res.status(200).json({ orders, success: true });
+    } catch (error) {
+        console.error("getShopifyOrder error:", error);
+        return res.status(500).json({ error: error.message, success: false });
+    }
+}
