@@ -1,5 +1,6 @@
 import { DeliveryMethod } from "@shopify/shopify-api";
 import shopify from "./shopify.js";
+import { createShopifyOrder } from "./Controller/Orders.Controller.js";
 /**
  * @type {{[key: string]: import("@shopify/shopify-api").WebhookHandler}}
  */
@@ -56,7 +57,7 @@ export default {
       //     "email": "john@example.com",
       //     "phone": "555-625-1199"
       //   },
-      //   "orders_to_redact": [
+      //   "orders_to_redact": [ 
       //     299938,
       //     280263,
       //     220458
@@ -92,7 +93,7 @@ export default {
 
       try {
         const data = typeof body === 'string' ? JSON.parse(body) : body;
-        console.log("Order data:", JSON.stringify(data, null, 2));
+        // console.log("Order data:", JSON.stringify(data, null, 2));
 
         // Get session correctly
         const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop);
@@ -101,7 +102,7 @@ export default {
         }
 
         const session = sessions[0];
-        console.log("Session found:", session.id);
+        // console.log("Session found:", session.id);
 
       } catch (error) {
         console.error("Webhook processing error:", error);
@@ -129,7 +130,7 @@ export default {
 
         const session = sessions[0];
         console.log("Session found:", session.id);
-
+        await createShopifyOrder(data, shop);
       } catch (error) {
         console.error("Webhook processing error:", error);
         // Rethrow to ensure proper error handling
