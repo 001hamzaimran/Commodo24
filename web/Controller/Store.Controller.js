@@ -58,3 +58,60 @@ export const addEditTimer = async (req, res) => {
         return res.status(500).json({ message: "Internal server Error" });
     }
 };
+
+export const createStoreSettings = async (req, res) => {
+    try {
+        const {
+            domain,
+            ShopifyFeeRate,
+            PaymentProviderFee,
+            comodoCommissionRate,
+            immediatePayoutShare,
+            holdBackShare,
+            holdBackDays
+        } = req.body;
+
+        if (!domain) {
+            return res.status(400).json({ message: "Domain is required" })
+        }
+
+        const store = await storeModel.findOne({ domain })
+
+        if (!store) {
+            return res.status(404).json({ message: "Store not found" });
+        }
+
+        store.ShopifyFeeRate = ShopifyFeeRate;
+        store.PaymentProviderFee = PaymentProviderFee;
+        store.comodoCommissionRate = comodoCommissionRate;
+        store.immediatePayoutShare = immediatePayoutShare;
+        store.holdBackShare = holdBackShare;
+        store.holdBackDays = holdBackDays;
+
+        await store.save();
+
+        return res.status(200).json({ message: "Settings Update Successfully", store })
+    } catch (error) {
+        console.log(error, " <<<<<, error")
+        return res.status(500).json({ message: "Internal Server Error", error })
+    }
+}
+
+export const getStoreSettings = async (req, res) => {
+    try {
+        const { domain } = req.body;
+
+        if (!domain) {
+            return res.status(400).json({ message: "Domain is required" })
+        }
+        const store = await storeModel.findOne({ domain })
+        if (!store) {
+            return res.status(404).json({ message: "Store Not Found" })
+        }
+
+        return res.status(200).json({ message: "Settings fetched successfully", store })
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ message: "Internal Server Error", err })
+    }
+}

@@ -8,6 +8,7 @@ import shopify from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
 import connectDB from "./Utils/DB.Config.js";
 import storeRouter from "./Routes/Store.routes.js";
+import settingsRouter from "./Routes/Settings.route.js";
 
 const PORT = parseInt(
   process.env.BACKEND_PORT || process.env.PORT || "3000",
@@ -41,7 +42,7 @@ app.use("/api/*", shopify.validateAuthenticatedSession());
 
 app.use(express.json());
 
-const routes = [storeRouter]
+const routes = [storeRouter ,settingsRouter]
 
 routes.forEach((route) => {
   app.use("/api", route)
