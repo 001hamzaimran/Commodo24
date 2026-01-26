@@ -5,7 +5,12 @@ const StoreSchema = new mongoose.Schema({
     domain: { type: String, required: true },
     store_Name: { type: String, required: true },
     country: { type: String, required: true },
-    orderEditTime: { type: Number, default: 0 },
+    ShopifyFeeRate: { type: Number, default: 4 },
+    PaymentProviderFee: { type: Number, default: 0 },
+    comodoCommissionRate: { type: Number, default: 30 },
+    immediatePayoutShare: { type: Number, default: 75 },
+    holdBackShare: { type: Number, default: 25 },
+    holdBackDays: { type: Number, default: 14 }
 }, { timestamps: true });
 
 const storeModel = mongoose.model("Store", StoreSchema)

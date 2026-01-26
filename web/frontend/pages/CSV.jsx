@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "./OrdersCSV.css";
 import * as XLSX from "xlsx";
+import { toast } from "react-toastify";
 
 const CSV_HEADERS = [
   "order_id",
@@ -29,7 +30,6 @@ const CSV_HEADERS = [
   "payout_batch_id"
 ];
 
-// ===== Additional CSV headers =====
 const PAYOUT_SUMMARY_HEADERS = [
   "payout_batch_id",
   "vendor_internal_id",
@@ -49,14 +49,6 @@ const VENDOR_MAPPING_HEADERS = [
   "vendor_display_name",
   "notes"
 ];
-
-// Constants — update these if your rules change
-const SHOPIFY_FEE_RATE = 0.04; // 4% total shopify fee (as you said)
-const PAYMENT_PROVIDER_FEE = 0; // set to 0 if you don't have provider fee per line
-const COMODO_COMMISSION_RATE = 0.30; // 30%
-const IMMEDIATE_PAYOUT_SHARE = 0.75; // 75%
-const HOLDBACK_SHARE = 0.25; // 25%
-const HOLDBACK_DAYS = 14; // holdback release after 14 days from immediate payout date
 
 function formatDateISO(d) {
   if (!d) return "";
@@ -84,148 +76,6 @@ function downloadCSV(headers, rows, name) {
   a.click();
 }
 
-// create rows for a single order (one row per line item)
-function buildRowsForOrder(order) {
-  const rows = [];
-  const orderDate = order.shopify_created_at || order.processed_at || order.createdAt;
-  const paymentDate = order.processed_at || order.shopify_created_at || order.createdAt;
-
-  order.line_items.forEach((li) => {
-    const lineGross = (parseFloat(li.price || li.line_price || li.total || 0) * (li.quantity || 1)) || 0;
-
-    const shopifyFee = +(lineGross * SHOPIFY_FEE_RATE).toFixed(2);
-    const paymentProviderFee = PAYMENT_PROVIDER_FEE; // if you have per-line provider fee, compute here
-    const totalShopifyFees = +(shopifyFee + paymentProviderFee).toFixed(2);
-
-    const netAfterShopify = +(lineGross - totalShopifyFees).toFixed(2);
-
-    const comodoCommissionAmount = +(netAfterShopify * COMODO_COMMISSION_RATE).toFixed(2);
-    const merchantRevenue = +(netAfterShopify - comodoCommissionAmount).toFixed(2);
-
-    const immediatePayout = +(merchantRevenue * IMMEDIATE_PAYOUT_SHARE).toFixed(2);
-    const holdbackAmount = +(merchantRevenue * HOLDBACK_SHARE).toFixed(2);
-
-    // determine payout dates
-    const scheduledPayoutDate = formatDateISO(orderDate); // use orderDate as scheduled payout date placeholder
-    const holdbackStartDate = scheduledPayoutDate; // per your rule: holdback start counted from first (75%) payout date
-    const holdbackReleaseDateObj = addDays(holdbackStartDate, HOLDBACK_DAYS);
-    const holdbackReleaseDate = formatDateISO(holdbackReleaseDateObj);
-
-    // determine payout status using current date
-    const now = new Date();
-    const actualPayoutDate = (new Date(holdbackReleaseDateObj) <= now) ? holdbackReleaseDate : "";
-    const payoutStatus = actualPayoutDate ? "released" : "pending";
-
-    // build a payout batch id (placeholder — replace with real batch logic if you have)
-    const payoutBatchId = `batch-${order.order_number || order.order_name || order._id}-${scheduledPayoutDate}`;
-    rows.push([
-      `${order.shopify_order_id || order.order_number || order._id}`,
-      formatDateISO(orderDate),
-      formatDateISO(paymentDate),
-      li.id || li.line_item_id || `${li.variant_id}` || "",
-      li.title || li.product_name || "",
-      li.quantity || 1,
-      li.vendor || li.vendor_display_name || (order.vendor || ""),
-      li.vendor_internal_id || li.vendor_id || "",
-      lineGross.toFixed(2),
-      shopifyFee.toFixed(2),
-      paymentProviderFee.toFixed(2),
-      totalShopifyFees.toFixed(2),
-      netAfterShopify.toFixed(2),
-      `${(COMODO_COMMISSION_RATE * 100).toFixed(0)}%`,
-      comodoCommissionAmount.toFixed(2),
-      merchantRevenue.toFixed(2),
-      immediatePayout.toFixed(2),
-      holdbackAmount.toFixed(2),
-      holdbackStartDate,
-      holdbackReleaseDate,
-      payoutStatus,
-      scheduledPayoutDate,
-      actualPayoutDate,
-      payoutBatchId
-    ]);
-  });
-
-  return rows;
-}
-
-// ===== Build payout summary (grouped by vendor) =====
-function buildPayoutSummaryRows(order) {
-  const map = {};
-  const orderDate = order.shopify_created_at || order.processed_at || order.createdAt;
-  const payoutPeriodStart = formatDateISO(orderDate);
-  const payoutPeriodEnd = formatDateISO(addDays(payoutPeriodStart, HOLDBACK_DAYS));
-
-  order.line_items.forEach((li) => {
-    const vendorId = li.vendor_internal_id || li.vendor_id || "";
-    const vendorName = li.vendor || li.vendor_display_name || "";
-
-    if (!map[vendorId]) {
-      map[vendorId] = {
-        vendor_internal_id: vendorId,
-        vendor_display_name: vendorName,
-        total_orders: new Set(),
-        total_immediate_payout: 0,
-        total_holdback_released: 0,
-        payout_batch_id: `batch-${order.order_number || order._id}-${payoutPeriodStart}`
-      };
-    }
-
-    const lineGross = (parseFloat(li.price || 0) * (li.quantity || 1)) || 0;
-    const shopifyFee = +(lineGross * SHOPIFY_FEE_RATE).toFixed(2);
-    const netAfterShopify = lineGross - shopifyFee;
-    const commission = +(netAfterShopify * COMODO_COMMISSION_RATE).toFixed(2);
-    const merchantRevenue = netAfterShopify - commission;
-
-    const immediate = +(merchantRevenue * IMMEDIATE_PAYOUT_SHARE).toFixed(2);
-    const holdback = +(merchantRevenue * HOLDBACK_SHARE).toFixed(2);
-
-    map[vendorId].total_orders.add(order.shopify_order_id || order._id);
-    map[vendorId].total_immediate_payout += immediate;
-    map[vendorId].total_holdback_released += holdback;
-  });
-
-  return Object.values(map).map(v => {
-    const totalOrders = v.total_orders.size;
-    const totalPayout = +(v.total_immediate_payout + v.total_holdback_released).toFixed(2);
-
-    return [
-      v.payout_batch_id,
-      v.vendor_internal_id,
-      v.vendor_display_name,
-      payoutPeriodStart,
-      payoutPeriodEnd,
-      totalOrders,
-      v.total_immediate_payout.toFixed(2),
-      v.total_holdback_released.toFixed(2),
-      totalPayout.toFixed(2),
-      "pending",
-      payoutPeriodEnd
-    ];
-  });
-}
-
-// ===== Vendor mapping rows =====
-function buildVendorMappingRows(order) {
-  const seen = new Set();
-  const rows = [];
-
-  order.line_items.forEach(li => {
-    const vendorId = li.vendor_internal_id || li.vendor_id || "";
-    if (seen.has(vendorId)) return;
-    seen.add(vendorId);
-
-    rows.push([
-      vendorId,
-      li.vendor || li.vendor_display_name || "",
-      ""
-    ]);
-  });
-
-  return rows;
-}
-
-
 function OrdersCSV() {
   const [data, setData] = useState([]);
   const [store, setStore] = useState("");
@@ -235,19 +85,236 @@ function OrdersCSV() {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedOrder, setExpandedOrder] = useState(null);
 
-  console.log(data, "<<<< data ")
+  // defaults -> these act as fallback if settings aren't present
+  const [form, setForm] = useState({
+    ShopifyFeeRate: 4,           // percent
+    PaymentProviderFee: 0,       // absolute value per line (currency)
+    comodoCommissionRate: 30,    // percent
+    immediatePayoutShare: 75,    // percent
+    holdBackShare: 25,           // percent
+    holdBackDays: 14,            // days
+  });
 
+  // Derived rates object (pass this to helpers)
+  const rates = {
+    shopifyFeeRate: (form?.ShopifyFeeRate ?? 4) / 100,
+    paymentProviderFee: Number(form?.PaymentProviderFee ?? 0),
+    comodoCommissionRate: (form?.comodoCommissionRate ?? 30) / 100,
+    immediatePayoutShare: (form?.immediatePayoutShare ?? 75) / 100,
+    holdbackShare: (form?.holdBackShare ?? 25) / 100,
+    holdbackDays: Number(form?.holdBackDays ?? 14)
+  };
+
+  /* ---------------- HELPERS (use `rates` for calculations) ---------------- */
+
+  function buildRowsForOrder(order, ratesObj) {
+    // ensure ratesObj exists
+    const {
+      shopifyFeeRate = 0.04,
+      paymentProviderFee = 0,
+      comodoCommissionRate = 0.30,
+      immediatePayoutShare = 0.75,
+      holdbackShare = 0.25,
+      holdbackDays = 14
+    } = ratesObj || {};
+
+    const rows = [];
+    const orderDate = order.shopify_created_at || order.processed_at || order.createdAt;
+    const paymentDate = order.processed_at || order.shopify_created_at || order.createdAt;
+
+    (order.line_items || []).forEach((li) => {
+      const qty = li.quantity || 1;
+      const unitPrice = parseFloat(li.price ?? li.line_price ?? li.total ?? 0) || 0;
+      const lineGross = +(unitPrice * qty).toFixed(2);
+
+      const shopifyFee = +(lineGross * shopifyFeeRate).toFixed(2);
+      const ppFee = +Number(paymentProviderFee).toFixed(2);
+      const totalShopifyFees = +(shopifyFee + ppFee).toFixed(2);
+
+      const netAfterShopify = +(lineGross - totalShopifyFees).toFixed(2);
+      const comodoCommissionAmount = +(netAfterShopify * comodoCommissionRate).toFixed(2);
+      const merchantRevenue = +(netAfterShopify - comodoCommissionAmount).toFixed(2);
+
+      const immediatePayout = +(merchantRevenue * immediatePayoutShare).toFixed(2);
+      const holdbackAmount = +(merchantRevenue * holdbackShare).toFixed(2);
+
+      // payout dates
+      const scheduledPayoutDate = formatDateISO(orderDate);
+      const holdbackStartDate = scheduledPayoutDate;
+      const holdbackReleaseDateObj = addDays(holdbackStartDate, holdbackDays);
+      const holdbackReleaseDate = formatDateISO(holdbackReleaseDateObj);
+
+      const now = new Date();
+      const actualPayoutDate = (new Date(holdbackReleaseDateObj) <= now) ? holdbackReleaseDate : "";
+      const payoutStatus = actualPayoutDate ? "released" : "pending";
+
+      const payoutBatchId = `batch-${order.order_number || order.order_name || order._id}-${scheduledPayoutDate}`;
+
+      rows.push([
+        `${order.shopify_order_id || order.order_number || order._id}`,
+        formatDateISO(orderDate),
+        formatDateISO(paymentDate),
+        li.id || li.line_item_id || `${li.variant_id}` || "",
+        li.title || li.product_name || "",
+        qty,
+        li.vendor || li.vendor_display_name || (order.vendor || ""),
+        li.vendor_internal_id || li.vendor_id || "",
+        lineGross.toFixed(2),
+        shopifyFee.toFixed(2),
+        ppFee.toFixed(2),
+        totalShopifyFees.toFixed(2),
+        netAfterShopify.toFixed(2),
+        `${(comodoCommissionRate * 100).toFixed(0)}%`,
+        comodoCommissionAmount.toFixed(2),
+        merchantRevenue.toFixed(2),
+        immediatePayout.toFixed(2),
+        holdbackAmount.toFixed(2),
+        holdbackStartDate,
+        holdbackReleaseDate,
+        payoutStatus,
+        scheduledPayoutDate,
+        actualPayoutDate,
+        payoutBatchId
+      ]);
+    });
+
+    return rows;
+  }
+
+  function buildPayoutSummaryRows(order, ratesObj) {
+    const {
+      shopifyFeeRate = 0.04,
+      comodoCommissionRate = 0.30,
+      immediatePayoutShare = 0.75,
+      holdbackShare = 0.25,
+      holdbackDays = 14
+    } = ratesObj || {};
+
+    const map = {};
+    const orderDate = order.shopify_created_at || order.processed_at || order.createdAt;
+    const payoutPeriodStart = formatDateISO(orderDate);
+    const payoutPeriodEnd = formatDateISO(addDays(payoutPeriodStart, holdbackDays));
+
+    (order.line_items || []).forEach((li) => {
+      const vendorId = li.vendor_internal_id || li.vendor_id || "";
+      const vendorName = li.vendor || li.vendor_display_name || "";
+
+      if (!map[vendorId]) {
+        map[vendorId] = {
+          vendor_internal_id: vendorId,
+          vendor_display_name: vendorName,
+          total_orders: new Set(),
+          total_immediate_payout: 0,
+          total_holdback_released: 0,
+          payout_batch_id: `batch-${order.order_number || order._id}-${payoutPeriodStart}`
+        };
+      }
+
+      const qty = li.quantity || 1;
+      const unitPrice = parseFloat(li.price ?? 0) || 0;
+      const lineGross = +(unitPrice * qty).toFixed(2);
+
+      const shopifyFee = +(lineGross * shopifyFeeRate).toFixed(2);
+      const netAfterShopify = +(lineGross - shopifyFee).toFixed(2);
+      const commission = +(netAfterShopify * comodoCommissionRate).toFixed(2);
+      const merchantRevenue = +(netAfterShopify - commission).toFixed(2);
+
+      const immediate = +(merchantRevenue * immediatePayoutShare).toFixed(2);
+      const holdback = +(merchantRevenue * holdbackShare).toFixed(2);
+
+      map[vendorId].total_orders.add(order.shopify_order_id || order._id);
+      map[vendorId].total_immediate_payout += immediate;
+      map[vendorId].total_holdback_released += holdback;
+    });
+
+    return Object.values(map).map(v => {
+      const totalOrders = v.total_orders.size;
+      const totalPayout = +(v.total_immediate_payout + v.total_holdback_released).toFixed(2);
+
+      return [
+        v.payout_batch_id,
+        v.vendor_internal_id,
+        v.vendor_display_name,
+        payoutPeriodStart,
+        payoutPeriodEnd,
+        totalOrders,
+        v.total_immediate_payout.toFixed(2),
+        v.total_holdback_released.toFixed(2),
+        totalPayout.toFixed(2),
+        "pending",
+        payoutPeriodEnd
+      ];
+    });
+  }
+
+  function buildVendorMappingRows(order) {
+    const seen = new Set();
+    const rows = [];
+    (order.line_items || []).forEach(li => {
+      const vendorId = li.vendor_internal_id || li.vendor_id || "";
+      if (seen.has(vendorId)) return;
+      seen.add(vendorId);
+
+      rows.push([
+        vendorId,
+        li.vendor || li.vendor_display_name || "",
+        ""
+      ]);
+    });
+    return rows;
+  }
+
+  /* ---------------- EFFECTS ---------------- */
+
+  // 1) fetch store domain (from your backend)
   useEffect(() => {
     fetch("/api/getShop")
       .then(res => res.json())
-      .then(d => setStore(d.domain))
+      .then(d => setStore(d.domain || ""))
       .catch(() => setStore(""));
   }, []);
 
+  // 2) fetch settings for current store (POST with { domain })
   useEffect(() => {
     if (!store) return;
-    // keep your shopify_store_id logic — update this string if needed
-    fetch(`/api/getShopifyOrder?shopify_store_id=${"developer-12799.myshopify.com"}`)
+
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch("/api/getSettings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain: store }),
+        });
+
+        const payload = await res.json();
+
+        if (res.ok && payload.store) {
+          const s = payload.store;
+          setForm({
+            ShopifyFeeRate: s.ShopifyFeeRate ?? 4,
+            PaymentProviderFee: s.PaymentProviderFee ?? 0,
+            comodoCommissionRate: s.comodoCommissionRate ?? 30,
+            immediatePayoutShare: s.immediatePayoutShare ?? 75,
+            holdBackShare: s.holdBackShare ?? 25,
+            holdBackDays: s.holdBackDays ?? 14,
+          });
+        } else {
+          // don't panic — keep defaults, but show a small toast so user knows
+          toast.warn(payload.message || "No settings found — using defaults");
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+        toast.error("Error fetching settings (network/server)");
+      }
+    };
+
+    fetchSettings();
+  }, [store]);
+
+  // 3) fetch orders
+  useEffect(() => {
+    if (!store) return;
+    fetch(`/api/getShopifyOrder?shopify_store_id=developer-12799.myshopify.com`)
       .then(res => res.json())
       .then(d => {
         setData(d.orders || []);
@@ -259,59 +326,37 @@ function OrdersCSV() {
       });
   }, [store]);
 
+  /* ---------------- CSV / XLSX GENERATION ---------------- */
+
   const generateOrderCSV = (order) => {
-    // 1) build each sheet's rows (these helper functions already exist in your file)
-    const detailRows = buildRowsForOrder(order); // returns array of arrays (line item rows)
-    const summaryRows = buildPayoutSummaryRows(order); // returns array of arrays
-    const vendorRows = buildVendorMappingRows(order); // returns array of arrays
+    const detailRows = buildRowsForOrder(order, rates);
+    const summaryRows = buildPayoutSummaryRows(order, rates);
+    const vendorRows = buildVendorMappingRows(order);
 
-    // 2) prepend headers for each sheet
-    const detailAoA = [CSV_HEADERS, ...detailRows];
-    const summaryAoA = [PAYOUT_SUMMARY_HEADERS, ...summaryRows];
-    const vendorAoA = [VENDOR_MAPPING_HEADERS, ...vendorRows];
-
-    // 3) create workbook and sheets
     const wb = XLSX.utils.book_new();
-
-    // Use sheet names with ORDER ID included (as you requested)
     const orderSuffix = `${order.order_number || order._id}`;
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([CSV_HEADERS, ...detailRows]), `merchant_payout_details-${orderSuffix}`.slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([PAYOUT_SUMMARY_HEADERS, ...summaryRows]), `payout_summary-${orderSuffix}`.slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([VENDOR_MAPPING_HEADERS, ...vendorRows]), `vendor_mapping-${orderSuffix}`.slice(0, 31));
 
-    const sheetName1 = `merchant_payout_details-${orderSuffix}`.slice(0, 31); // Excel sheet name limit protection
-    const sheetName2 = `payout_summary-${orderSuffix}`.slice(0, 31);
-    const sheetName3 = `vendor_mapping-${orderSuffix}`.slice(0, 31);
-
-    const ws1 = XLSX.utils.aoa_to_sheet(detailAoA);
-    XLSX.utils.book_append_sheet(wb, ws1, sheetName1);
-
-    const ws2 = XLSX.utils.aoa_to_sheet(summaryAoA);
-    XLSX.utils.book_append_sheet(wb, ws2, sheetName2);
-
-    const ws3 = XLSX.utils.aoa_to_sheet(vendorAoA);
-    XLSX.utils.book_append_sheet(wb, ws3, sheetName3);
-
-    // 4) write file (single xlsx with 3 sheets)
-    const filename = `payouts-${orderSuffix}.xlsx`;
-    XLSX.writeFile(wb, filename);
+    XLSX.writeFile(wb, `payouts-${orderSuffix}.xlsx`);
   };
 
-
-  // Export CSV for selected orders (flatten to line-item rows)
   const generateSelectedCSV = () => {
     const rows = Array.from(selectedOrders).flatMap(id => {
       const o = data.find(x => x._id === id || x.shopify_order_id === id);
-      return o ? buildRowsForOrder(o) : [];
+      return o ? buildRowsForOrder(o, rates) : [];
     });
 
     downloadCSV(CSV_HEADERS, rows, `orders-selected.csv`);
   };
 
-  // Export CSV for current timeRange (all filtered orders transformed to line items)
   const generateTimeRangeCSV = () => {
-    const rows = data.flatMap(o => buildRowsForOrder(o));
+    const rows = data.flatMap(o => buildRowsForOrder(o, rates));
     downloadCSV(CSV_HEADERS, rows, `orders-${timeRange}.csv`);
   };
 
-  /* ---------------- UI HELPERS (unchanged) ---------------- */
+  /* ---------------- UI HELPERS ---------------- */
 
   const toggleSelect = (id) => {
     const s = new Set(selectedOrders);
@@ -337,7 +382,6 @@ function OrdersCSV() {
 
   return (
     <div className="orders-app">
-
       <header className="app-header">
         <h1>Orders (detailed CSV)</h1>
         <span>{store}</span>
@@ -391,7 +435,6 @@ function OrdersCSV() {
 
         {filteredOrders.map(order => (
           <div key={order._id} className="order-card">
-
             <div className="order-row">
               <input
                 type="checkbox"
@@ -418,7 +461,6 @@ function OrdersCSV() {
             </div>
 
             <div className={`order-details ${expandedOrder === order._id ? "open" : ""}`}>
-
               <div className="details-header">
                 <h3>Order Details</h3>
                 <span className={`badge ${order.payment_status && order.payment_status.toLowerCase()}`}>
@@ -442,12 +484,10 @@ function OrdersCSV() {
                   </div>
                 ))}
               </div>
-
             </div>
           </div>
         ))}
       </div>
-
     </div>
   );
 }
