@@ -12,7 +12,9 @@ export const getShop = async (req, res) => {
             const domain = Store.data[0].domain;
             const country = Store.data[0].country;
             const store_Id = Store.data[0].id;
+            const store_Currency = Store.data[0].currency;
 
+            console.log(store_Name, domain, country, store_Id, store_Currency, " <<<<< store details")
             // Check if store_Name exists in the database
             let existingStore = await storeModel.findOne({ store_Name });
 
@@ -23,6 +25,7 @@ export const getShop = async (req, res) => {
                     domain,
                     country,
                     store_Id,
+                    store_Currency
                 });
                 await newStore.save();
                 existingStore = newStore;

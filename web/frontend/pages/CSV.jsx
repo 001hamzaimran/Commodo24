@@ -84,6 +84,7 @@ function OrdersCSV() {
   const [selectedOrders, setSelectedOrders] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [storeCurrency, setStoreCurrency] = useState("USD")
 
   // defaults -> these act as fallback if settings aren't present
   const [form, setForm] = useState({
@@ -106,6 +107,14 @@ function OrdersCSV() {
   };
 
   /* ---------------- HELPERS (use `rates` for calculations) ---------------- */
+
+  function formatCurrency(amount, currency) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  }
 
   function buildRowsForOrder(order, ratesObj) {
     // ensure ratesObj exists
@@ -159,16 +168,16 @@ function OrdersCSV() {
         qty,
         li.vendor || li.vendor_display_name || (order.vendor || ""),
         li.vendor_internal_id || li.vendor_id || "",
-        lineGross.toFixed(2),
-        shopifyFee.toFixed(2),
-        ppFee.toFixed(2),
-        totalShopifyFees.toFixed(2),
-        netAfterShopify.toFixed(2),
+        formatCurrency(lineGross, storeCurrency),
+        formatCurrency(shopifyFee, storeCurrency),
+        formatCurrency(ppFee, storeCurrency),
+        formatCurrency(totalShopifyFees, storeCurrency),
+        formatCurrency(netAfterShopify, storeCurrency),
         `${(comodoCommissionRate * 100).toFixed(0)}%`,
-        comodoCommissionAmount.toFixed(2),
-        merchantRevenue.toFixed(2),
-        immediatePayout.toFixed(2),
-        holdbackAmount.toFixed(2),
+        formatCurrency(comodoCommissionAmount, storeCurrency),
+        formatCurrency(merchantRevenue, storeCurrency),
+        formatCurrency(immediatePayout, storeCurrency),
+        formatCurrency(holdbackAmount, storeCurrency),
         holdbackStartDate,
         holdbackReleaseDate,
         payoutStatus,
@@ -238,9 +247,9 @@ function OrdersCSV() {
         payoutPeriodStart,
         payoutPeriodEnd,
         totalOrders,
-        v.total_immediate_payout.toFixed(2),
-        v.total_holdback_released.toFixed(2),
-        totalPayout.toFixed(2),
+        formatCurrency(v.total_immediate_payout, storeCurrency),
+        formatCurrency(v.total_holdback_released, storeCurrency),
+        formatCurrency(totalPayout, storeCurrency),
         "pending",
         payoutPeriodEnd
       ];
@@ -270,7 +279,11 @@ function OrdersCSV() {
   useEffect(() => {
     fetch("/api/getShop")
       .then(res => res.json())
-      .then(d => setStore(d.domain || ""))
+      .then(d => {
+        console.log(d, "<<< store");
+        setStore(d.domain || "");
+        setStoreCurrency(d.store_Currency || "USD");
+      })
       .catch(() => setStore(""));
   }, []);
 
