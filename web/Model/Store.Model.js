@@ -10,7 +10,8 @@ const StoreSchema = new mongoose.Schema({
     comodoCommissionRate: { type: Number, default: 30 },
     immediatePayoutShare: { type: Number, default: 75 },
     holdBackShare: { type: Number, default: 25 },
-    holdBackDays: { type: Number, default: 14 }
+    holdBackDays: { type: Number, default: 14 },
+    store_Currency: { type: String, required: true }
 }, { timestamps: true });
 
 const storeModel = mongoose.model("Store", StoreSchema)
